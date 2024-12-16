@@ -36,7 +36,7 @@ def process_dataset(input_dir, output_dir):
         os.makedirs(output_dir)
 
     for filename in os.listdir(input_dir):
-        if filename.endswith(".jpg") or filename.endswith(".png"):
+        if filename.lower().endswith((".jpg", ".png", ".jpeg")):
             input_path = os.path.join(input_dir, filename)
             output_path = os.path.join(output_dir, filename)
             remove_foreground(input_path, output_path)
