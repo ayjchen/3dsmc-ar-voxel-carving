@@ -15,8 +15,8 @@ if using_colab:
     # !wget -P images https://raw.githubusercontent.com/facebookresearch/sam2/main/notebooks/images/truck.jpg
     # !wget -P images https://raw.githubusercontent.com/facebookresearch/sam2/main/notebooks/images/groceries.jpg
 
-     !mkdir -p ../checkpoints/
-     !wget -P ../checkpoints/ https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
+    !mkdir -p ../checkpoints/
+    !wget -P ../checkpoints/ https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
 
 import os
 # if using Apple MPS, fall back to CPU for unsupported ops
@@ -125,17 +125,14 @@ for img_file in os.listdir(input_dir):
     predictor.set_image(image)
 
     # Define an input box (modify as needed for your dataset)
-    input_point = np.array([[0, 0]])
-    input_label = np.array([0]) #selecting background
+    input_box = np.array([50, 50, 3950, 2950])
+    input_point = None
 
-    mask_input = logits[np.argmin(scores), :, :]  # Choose the model's worst mask where most background will be chosen
-
-    # Predict masks
     masks, scores, _ = predictor.predict(
-        point_coords=input_point,
-        point_labels=input_label,
-        box=input_box[None, :, :],
-        multimask_output=False
+        point_coords=None,
+        point_labels=None,
+        box=input_box[None, :],
+        multimask_output=False,
     )
 
     # Extract the mask
@@ -144,13 +141,15 @@ for img_file in os.listdir(input_dir):
     # Invert the mask to keep the foreground
     foreground_mask = 1 - mask
 
-    # Add an alpha channel for transparency
-    segmented_image_np = np.zeros((image.shape[0], image.shape[1], 4), dtype=np.uint8)
-    segmented_image_np[:, :, :3] = image * foreground_mask[:, :, None]  # Apply inverted mask to RGB channels
-    segmented_image_np[:, :, 3] = foreground_mask * 255  # Set alpha channel
+    segmented_image_np[:, :, :3] = image * foreground_mask[:, :, None]  # Keep foreground
+    segmented_image_np[:, :, 3] = foreground_mask * 255  # Alpha channel for transparency
+
+    # Convert to RGB by setting the background to black where the alpha channel is 0
+    segmented_image_rgb = segmented_image_np[:, :, :3]  # Discard alpha channel
+    segmented_image_rgb[segmented_image_np[:, :, 3] == 0] = 0  # Set background to black
 
     # Save the segmented image
-    segmented_image_pil = Image.fromarray(segmented_image_np, mode="RGBA")
-    segmented_image_pil.save(output_path)
+    segmented_image_pil = Image.fromarray(segmented_image_np, mode="RGB")
+    segmented_image_pil.save(output_path, format=JPG")
 
     print(f"Saved segmented image to: {output_path}")
