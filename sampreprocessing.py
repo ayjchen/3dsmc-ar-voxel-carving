@@ -127,6 +127,7 @@ for img_file in os.listdir(input_dir):
     # Define an input box (modify as needed for your dataset)
     input_box = np.array([50, 50, 3950, 2950])
     input_point = None
+    input_label = np.array([0])
 
     masks, scores, _ = predictor.predict(
         point_coords=None,
