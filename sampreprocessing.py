@@ -150,6 +150,6 @@ for img_file in os.listdir(input_dir):
 
     # Save the segmented image
     segmented_image_pil = Image.fromarray(segmented_image_np, mode="RGB")
-    segmented_image_pil.save(output_path, format=JPG")
+    segmented_image_pil.save(output_path, format=JPEG")
 
     print(f"Saved segmented image to: {output_path}")
