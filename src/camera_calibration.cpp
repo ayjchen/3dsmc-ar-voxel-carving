@@ -25,7 +25,6 @@ int main() {
     Ptr<aruco::DetectorParameters> detectorParams = makePtr<aruco::DetectorParameters>();    
     Ptr<aruco::CharucoParameters> charucoParams = makePtr<aruco::CharucoParameters>();
 
-
     // Initialize CharucoDetector
     Ptr<aruco::CharucoDetector> detector = makePtr<aruco::CharucoDetector>(*board, *charucoParams, *detectorParams);
 
@@ -68,11 +67,24 @@ int main() {
         Mat charucoCorners, charucoIds;
         detector->detectBoard(image, charucoCorners, charucoIds);
 
+        // Debugging: print detected markers and corners
+        cout << "Processing image: " << imagePath << endl;
+        cout << "Detected " << charucoIds.total() << " marker IDs." << endl;
+        if (!charucoCorners.empty()) {
+            cout << "Detected " << charucoCorners.total() << " corners." << endl;
+        } else {
+            cout << "No corners detected in this image." << endl;
+        }
+
         if (charucoCorners.total() > 3) {
             vector<Point3f> objectPoints;
             vector<Point2f> imagePoints;
 
             board->matchImagePoints(charucoCorners, charucoIds, objectPoints, imagePoints);
+
+            // Debugging: print matched image points and object points
+            cout << "Number of image points detected: " << imagePoints.size() << endl;
+            cout << "Number of object points: " << objectPoints.size() << endl;
 
             if (imagePoints.empty() || objectPoints.empty()) {
                 continue;
@@ -85,6 +97,18 @@ int main() {
             allImagePoints.push_back(imagePoints);
 
             imageSize = image.size();
+
+            // Draw detected corners on the image
+            for (size_t i = 0; i < charucoCorners.total(); ++i) {
+                circle(image, charucoCorners.at<Point2f>(i), 5, Scalar(0, 0, 255), 2);  // Red circles
+            }
+
+            // Display image with corners
+            imshow("Detected Charuco Corners", image);
+            char key = (char)waitKey(0);  // Wait indefinitely until a key is pressed
+            if (key == 27) {  // If ESC is pressed, close the image
+                break;
+            }
         } else {
             cerr << "Insufficient corners detected in image: " << imagePath << endl;
         }
