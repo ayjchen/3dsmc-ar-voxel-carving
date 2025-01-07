@@ -96,8 +96,7 @@ int main() {
     }
 
     // Camera calibration
-    Mat cameraMatrix = Mat::eye(3, 3, CV_64F);
-    Mat distCoeffs = Mat::zeros(1, 5, CV_64F); // Typical size for distortion coefficients
+    Mat cameraMatrix, distCoeffs; 
     int calibrationFlags = 0;  // Define calibration flags, e.g., CALIB_ZERO_TANGENT_DIST
     double repError = calibrateCamera(allObjectPoints, allImagePoints, imageSize, cameraMatrix, distCoeffs,
                                       noArray(), noArray(), noArray(), noArray(), noArray(), calibrationFlags);
