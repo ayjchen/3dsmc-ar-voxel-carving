@@ -8,5 +8,8 @@ find_package(OpenCV REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 
+add_executable(CameraCalibration src/camera_calibration.cpp)
 add_executable(VoxelCarving src/detect_markers.cpp)
+
+target_link_libraries(CameraCalibration ${OpenCV_LIBS})
 target_link_libraries(VoxelCarving ${OpenCV_LIBS})
