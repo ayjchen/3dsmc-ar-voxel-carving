@@ -7,7 +7,16 @@ using namespace cv;
 using namespace std;
 namespace fs = std::filesystem;
 
-void detectArucoMarkers(const string& imagePath, const string& outputPath) {
+void detectArucoMarkers(const Mat& img, vector<vector<Point2f>>& markerCorners, vector<int>& markerIds) {
+    // Detector parameters and dictionary
+    Ptr<aruco::DetectorParameters> detectorParams = aruco::DetectorParameters::create();
+    Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::DICT_5X5_50);
+
+    // Detect ArUco markers
+    aruco::detectMarkers(img, dictionary, markerCorners, markerIds, detectorParams);
+}
+
+void processImage(const string& imagePath, const string& outputPath) {
     // Read the segmented image
     Mat img = imread(imagePath);
     if (img.empty()) {
@@ -15,14 +24,10 @@ void detectArucoMarkers(const string& imagePath, const string& outputPath) {
         return;
     }
 
-    // Detector parameters and dictionary
-    Ptr<aruco::DetectorParameters> detectorParams = aruco::DetectorParameters::create();
-    Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::DICT_5X5_50);
-
     // Detect ArUco markers
     vector<int> markerIds;
     vector<vector<Point2f>> markerCorners;
-    aruco::detectMarkers(img, dictionary, markerCorners, markerIds, detectorParams);
+    detectArucoMarkers(img, markerCorners, markerIds);
 
     if (markerIds.empty()) {
         cerr << "No ArUco markers detected in image " << imagePath << endl;
@@ -45,21 +50,21 @@ void processDataset(const string& inputDir, const string& outputDir) {
         if (entry.path().extension() == ".jpg" || entry.path().extension() == ".png" || entry.path().extension() == ".jpeg") {
             string inputPath = entry.path().string();
             string outputPath = (fs::path(outputDir) / entry.path().filename()).string();
-            detectArucoMarkers(inputPath, outputPath);
+            processImage(inputPath, outputPath);
         }
     }
 }
 
-int main(int argc, char** argv) {
-    if (argc != 3) {
-        cerr << "Usage: " << argv[0] << " <input_directory> <output_directory>" << endl;
-        return -1;
-    }
+// int main(int argc, char** argv) {
+//     if (argc != 3) {
+//         cerr << "Usage: " << argv[0] << " <input_directory> <output_directory>" << endl;
+//         return -1;
+//     }
 
-    string inputDirectory = argv[1];
-    string outputDirectory = argv[2];
+//     string inputDirectory = argv[1];
+//     string outputDirectory = argv[2];
 
-    processDataset(inputDirectory, outputDirectory);
+//     processDataset(inputDirectory, outputDirectory);
 
-    return 0;
-}
+//     return 0;
+// }
