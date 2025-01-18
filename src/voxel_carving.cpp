@@ -6,10 +6,13 @@
 #include <yaml-cpp/yaml.h>
 #include "detect_markers.h"
 #include "marching_cubes.h"
+#include "MarchingCubes.h"
+#include "SimpleMesh.h"
+#include "Volume.h"
 
 namespace fs = std::filesystem;
 
-void loadCalibrationResults(const std::string& filename, cv::Mat& cameraMatrix, cv::Mat& distCoeffs) {
+void loadCalibrationResults( std::string& filename, cv::Mat& cameraMatrix, cv::Mat& distCoeffs) {
     YAML::Node config = YAML::LoadFile(filename);
 
     // Read camera matrix
@@ -30,97 +33,45 @@ void loadCalibrationResults(const std::string& filename, cv::Mat& cameraMatrix, 
     std::cout << "Distortion Coefficients:\n" << distCoeffs << std::endl;
 }
 
-void saveVoxelsAsOFF(const std::vector<cv::Point3f>& vertices, const std::vector<std::vector<int>>& faces, const std::string& filename) {
-    std::ofstream ofs(filename);
-    if (!ofs.is_open()) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
+void updateVolume(cv::Mat& rvecs, cv::Mat& tvecs, Volume& vol, int gridSize, float voxelSize) {
+    if (rvecs.empty() || tvecs.empty()) {
+        std::cerr << "Error: Empty rvecs or tvecs passed to updateVolume!" << std::endl;
         return;
     }
 
-    ofs << "OFF\n";
-    ofs << vertices.size() << " " << faces.size() << " 0\n";
-    for (const auto& vertex : vertices) {
-        ofs << vertex.x << " " << vertex.y << " " << vertex.z << "\n";
-    }
-    for (const auto& face : faces) {
-        ofs << face.size();
-        for (const auto& index : face) {
-            ofs << " " << index;
-        }
-        ofs << "\n";
-    }
+    cv::Mat rvec = cv::Mat::zeros(3, 1, CV_64F);
+    cv::Mat tvec = cv::Mat::zeros(3, 1, CV_64F);
 
-    ofs.close();
-}
-
-void calculateExtrinsics(const std::vector<std::vector<cv::Point2f>>& markerCorners, 
-                         const std::vector<int>& markerIds, 
-                         const cv::Mat& cameraMatrix, 
-                         const cv::Mat& distCoeffs, 
-                         cv::Mat& rvec, cv::Mat& tvec) {
-    // Assume all markers are of the same size
-    float markerLength = 0.03f; // Marker size in meters
-
-    // Define 3D object points for a single marker (in marker's local coordinate system)
-    std::vector<cv::Point3f> singleMarkerObjectPoints = {
-        {0.0f, 0.0f, 0.0f},                           // Top-left corner
-        {markerLength, 0.0f, 0.0f},                   // Top-right corner
-        {markerLength, markerLength, 0.0f},           // Bottom-right corner
-        {0.0f, markerLength, 0.0f}                    // Bottom-left corner
-    };
-
-    // Aggregate object points and corresponding image points for all detected markers
-    std::vector<cv::Point3f> objectPoints;
-    std::vector<cv::Point2f> imagePoints;
-
-    for (size_t i = 0; i < markerCorners.size(); ++i) {
-        for (size_t j = 0; j < singleMarkerObjectPoints.size(); ++j) {
-            objectPoints.push_back(singleMarkerObjectPoints[j]);
-            imagePoints.push_back(markerCorners[i][j]);
+    for (int i = 0; i < rvecs.rows; i++) {
+        std::cout << "Rvec " << i << ": " << rvecs.row(i) << std::endl;
+        std::cout << "Tvec " << i << ": " << tvecs.row(i) << std::endl;
+        for (int j = 0; j < 3; j++) {
+            rvec.at<double>(j) += rvecs.at<double>(i, j);
+            tvec.at<double>(j) += tvecs.at<double>(i, j);
         }
     }
 
-    // SolvePnP to calculate rvec and tvec
-    if (!objectPoints.empty() && !imagePoints.empty()) {
-        cv::solvePnP(objectPoints, imagePoints, cameraMatrix, distCoeffs, rvec, tvec);
-    } else {
-        std::cerr << "No markers detected or insufficient data for solvePnP." << std::endl;
-    }
-}
+    rvec /= static_cast<double>(rvecs.rows);
+    tvec /= static_cast<double>(tvecs.rows);
 
+    std::cout << "Averaged Rvec: " << rvec.t() << std::endl;
+    std::cout << "Averaged Tvec: " << tvec.t() << std::endl;
 
-void updateScalarField(const cv::Mat& rvec, const cv::Mat& tvec, cv::Mat& scalarField, const int gridSize, const float voxelSize) {
+    // Compute rotation matrix
     cv::Mat R;
     cv::Rodrigues(rvec, R);
 
-    // std::cout << "Scalar Field Size: " << scalarField.size() << std::endl;
-    // std::cout << "Scalar Field Rows: " << scalarField.rows << ", Cols: " << scalarField.cols << std::endl;
+    std::cout << "Rotation Matrix: " << R << std::endl;
 
+    // Update volume
     for (int x = 0; x < gridSize; ++x) {
         for (int y = 0; y < gridSize; ++y) {
             for (int z = 0; z < gridSize; ++z) {
-                cv::Point3f voxelCenter((x - gridSize / 2) * voxelSize, 
-                                        (y - gridSize / 2) * voxelSize, 
-                                        (z - gridSize / 2) * voxelSize);
+                cv::Mat voxelCenter = (cv::Mat_<double>(3, 1) << x * voxelSize, y * voxelSize, z * voxelSize);
+                cv::Mat worldCoord = R * voxelCenter + tvec;
 
-                // Transform voxel center to camera coordinates
-                cv::Mat voxelMat = (cv::Mat_<double>(3, 1) << voxelCenter.x, voxelCenter.y, voxelCenter.z);
-                voxelMat = R * voxelMat + tvec;
-
-                // Check if the voxel projects to valid image coordinates
-                if (voxelMat.at<double>(2) > 0) { // Check if in front of the camera
-                    cv::Point2f imgPoint;
-                    imgPoint.x = voxelMat.at<double>(0) / voxelMat.at<double>(2);
-                    imgPoint.y = voxelMat.at<double>(1) / voxelMat.at<double>(2);
-                    // std::cout << "imgPoint: " << imgPoint << std::endl;
-
-                    // Check that image point is within the image boundaries
-                    if (imgPoint.x >= 0 && imgPoint.x < scalarField.size[0] &&
-                        imgPoint.y >= 0 && imgPoint.y < scalarField.size[1]) {
-                        scalarField.at<float>(x, y, z) -= 1; // Increment carving effect
-                        // std::cout << "Scalar field value: " << scalarField.at<float>(x, y, z) << std::endl;
-                    }
-                }
+                vol.set(x, y, z, worldCoord.at<double>(2));
+                // std::cout << "Updating voxel (" << x << ", " << y << ", " << z << ") with value: " << vol.get(x, y, z) << std::endl;
             }
         }
     }
@@ -128,9 +79,8 @@ void updateScalarField(const cv::Mat& rvec, const cv::Mat& tvec, cv::Mat& scalar
 
 void performVoxelCarving(const std::vector<cv::Mat>& images, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
     const int gridSize = 100;
-    const float voxelSize = 0.01f; // Size of each voxel in meters
-    int sizes[3] = {gridSize, gridSize, gridSize};
-    cv::Mat scalarField(3, sizes, CV_32F, cv::Scalar(1));
+    const float voxelSize = 0.01f;
+    Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
 
     for (const auto& image : images) {
         std::vector<int> markerIds;
@@ -138,30 +88,33 @@ void performVoxelCarving(const std::vector<cv::Mat>& images, const cv::Mat& came
         detectArucoMarkers(image, markerCorners, markerIds);
 
         if (markerIds.empty()) {
+            std::cout << "No markers detected in image." << std::endl;
             continue;
         }
 
-        cv::Mat rvec, tvec;
-        calculateExtrinsics(markerCorners, markerIds, cameraMatrix, distCoeffs, rvec, tvec);
-        updateScalarField(rvec, tvec, scalarField, gridSize, voxelSize);
+        cv::Mat rvecs, tvecs;
+        cv::aruco::estimatePoseSingleMarkers(markerCorners, 0.03, cameraMatrix, distCoeffs, rvecs, tvecs);
+
+        // Debug marker pose estimates
+        if (rvecs.empty() || tvecs.empty()) {
+            std::cerr << "Error: Pose estimation failed. Empty rvecs/tvecs." << std::endl;
+            continue;
+        }
+
+        std::cout << "Rvecs Type: " << rvecs.type() << ", Size: " << rvecs.size() << std::endl;
+        std::cout << "Tvecs Type: " << tvecs.type() << ", Size: " << tvecs.size() << std::endl;
+
+        updateVolume(rvecs, tvecs, vol, gridSize, voxelSize);
     }
 
-    std::vector<cv::Point3f> vertices;
-    std::vector<std::vector<int>> faces;
-    std::cout << "scalarField size: " << scalarField.size << std::endl;
-    // for (int i = 40; i < 50; i++) {
-    //     for (int j = 40; j < 50; j++) {
-    //         // for (int k = 0; k < 10; k++) {
-    //             std::cout << scalarField.at<float>(i, j, 50) << " ";
-    //         // }
-    //         // std::cout << std::endl;
-    //     }
-    // }
-    marchingCubes(scalarField, 0.5f, vertices, faces);
-    std::cout << "Number of vertices: " << vertices.size() << std::endl;
-    std::cout << "Number of faces: " << faces.size() << std::endl;
+    SimpleMesh mesh;
+    std::cout << "Volume: " << vol.getDimX() << " " << vol.getDimY() << " " << vol.getDimZ() << " " << vol.getData() << std::endl;
+    marchingCubes(vol, 0.0f, mesh);
 
-    saveVoxelsAsOFF(vertices, faces, outputFilename);
+    std::cout << "Number of vertices: " << mesh.GetVertices().size() << std::endl;
+    std::cout << "Number of faces: " << mesh.GetTriangles().size() << std::endl;
+
+    mesh.WriteMesh(outputFilename);
 }
 
 int main(int argc, char** argv) {
@@ -178,7 +131,7 @@ int main(int argc, char** argv) {
     loadCalibrationResults(calibrationFile, cameraMatrix, distCoeffs);
 
     std::vector<cv::Mat> images;
-    for (const auto& entry : fs::directory_iterator(imageDirectory)) {
+    for ( auto& entry : fs::directory_iterator(imageDirectory)) {
         cv::Mat image = cv::imread(entry.path().string());
         if (!image.empty()) {
             images.push_back(image);
