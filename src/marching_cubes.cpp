@@ -5,15 +5,15 @@
 #include <vector>
 #include <cmath>
 
-void marchingCubes(Volume& scalarField, float isoLevel, SimpleMesh& mesh) {
-    int gridSizeX = scalarField.getDimX();
-    int gridSizeY = scalarField.getDimY();
-    int gridSizeZ = scalarField.getDimZ();
+void marchingCubes(Volume& vol, float isoLevel, SimpleMesh& mesh) {
+    int gridSizeX = vol.getDimX();
+    int gridSizeY = vol.getDimY();
+    int gridSizeZ = vol.getDimZ();
 
     for (int x = 0; x < gridSizeX - 1; x++) {
         for (int y = 0; y < gridSizeY - 1; y++) {
             for (int z = 0; z < gridSizeZ - 1; z++) {
-                ProcessVolumeCell(&scalarField, x, y, z, isoLevel, &mesh);
+                ProcessVolumeCell(&vol, x, y, z, isoLevel, &mesh);
             }
         }
     }
