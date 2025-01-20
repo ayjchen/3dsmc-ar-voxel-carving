@@ -33,45 +33,61 @@ void loadCalibrationResults( std::string& filename, cv::Mat& cameraMatrix, cv::M
     std::cout << "Distortion Coefficients:\n" << distCoeffs << std::endl;
 }
 
-void updateVolume(cv::Mat& rvecs, cv::Mat& tvecs, Volume& vol, int gridSize, float voxelSize) {
+void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& image, const cv::Mat& cameraMatrix, 
+                  Volume& vol, int gridSize, float voxelSize) {
     if (rvecs.empty() || tvecs.empty()) {
         std::cerr << "Error: Empty rvecs or tvecs passed to updateVolume!" << std::endl;
         return;
     }
 
-    cv::Mat rvec = cv::Mat::zeros(3, 1, CV_64F);
-    cv::Mat tvec = cv::Mat::zeros(3, 1, CV_64F);
+    // Convert image to grayscale and create a binary mask where non-black pixels are white
+    cv::Mat grayImage, mask;
+    cv::cvtColor(image, grayImage, cv::COLOR_BGR2GRAY);
+    cv::threshold(grayImage, mask, 1, 255, cv::THRESH_BINARY);
 
-    for (int i = 0; i < rvecs.rows; i++) {
-        std::cout << "Rvec " << i << ": " << rvecs.row(i) << std::endl;
-        std::cout << "Tvec " << i << ": " << tvecs.row(i) << std::endl;
-        for (int j = 0; j < 3; j++) {
-            rvec.at<double>(j) += rvecs.at<double>(i, j);
-            tvec.at<double>(j) += tvecs.at<double>(i, j);
-        }
-    }
+    for (int poseIdx = 0; poseIdx < rvecs.rows; ++poseIdx) {
+        // Convert rvecs and tvecs from Vec3d to Mat
+        cv::Mat rvec = cv::Mat(rvecs.at<cv::Vec3d>(poseIdx, 0)).reshape(1, 3); // 3x1 column vector
+        cv::Mat tvec = cv::Mat(tvecs.at<cv::Vec3d>(poseIdx, 0)).reshape(1, 3); // 3x1 column vector
 
-    rvec /= static_cast<double>(rvecs.rows);
-    tvec /= static_cast<double>(tvecs.rows);
+        // Compute the rotation matrix
+        cv::Mat R;
+        cv::Rodrigues(rvec, R);
 
-    std::cout << "Averaged Rvec: " << rvec.t() << std::endl;
-    std::cout << "Averaged Tvec: " << tvec.t() << std::endl;
+        // Compute the projection matrix P = K[R|t]
+        cv::Mat Rt;
+        cv::hconcat(R, tvec, Rt);
+        cv::Mat P = cameraMatrix * Rt;
 
-    // Compute rotation matrix
-    cv::Mat R;
-    cv::Rodrigues(rvec, R);
+        // Update volume
+        for (int x = 0; x < gridSize; ++x) {
+            for (int y = 0; y < gridSize; ++y) {
+                for (int z = 0; z < gridSize; ++z) {
+                    // Compute world coordinates of the voxel center
+                    cv::Mat voxelCenter = (cv::Mat_<double>(4, 1) << x * voxelSize, y * voxelSize, z * voxelSize, 1);
+                    cv::Mat projected = P * voxelCenter; // Project to the image plane
 
-    std::cout << "Rotation Matrix: " << R << std::endl;
+                    // Convert to 2D pixel coordinates
+                    double w = projected.at<double>(2); // Depth
+                    if (w <= 0.0) continue; // Skip voxels behind the camera
 
-    // Update volume
-    for (int x = 0; x < gridSize; ++x) {
-        for (int y = 0; y < gridSize; ++y) {
-            for (int z = 0; z < gridSize; ++z) {
-                cv::Mat voxelCenter = (cv::Mat_<double>(3, 1) << x * voxelSize, y * voxelSize, z * voxelSize);
-                cv::Mat worldCoord = R * voxelCenter + tvec;
+                    double u = projected.at<double>(0) / w;
+                    double v = projected.at<double>(1) / w;
 
-                vol.set(x, y, z, worldCoord.at<double>(2));
-                // std::cout << "Updating voxel (" << x << ", " << y << ", " << z << ") with value: " << vol.get(x, y, z) << std::endl;
+                    // Check if the voxel projection lies within the image boundaries
+                    if (u >= 0 && u < mask.cols && v >= 0 && v < mask.rows) {
+                        int imgX = static_cast<int>(u);
+                        int imgY = static_cast<int>(v);
+
+                        // Check the foreground mask
+                        if (mask.at<uchar>(imgY, imgX) > 0) {
+                            vol.set(x, y, z, w);
+                        } else {
+                            vol.set(x, y, z, 0.0);
+                        }
+                        // std::cout << "Voxel: " << x << " " << y << " " << z << " " << vol.get(x, y, z) << std::endl;
+                    }
+                }
             }
         }
     }
@@ -104,11 +120,24 @@ void performVoxelCarving(const std::vector<cv::Mat>& images, const cv::Mat& came
         std::cout << "Rvecs Type: " << rvecs.type() << ", Size: " << rvecs.size() << std::endl;
         std::cout << "Tvecs Type: " << tvecs.type() << ", Size: " << tvecs.size() << std::endl;
 
-        updateVolume(rvecs, tvecs, vol, gridSize, voxelSize);
+        updateVolume(rvecs, tvecs, image, cameraMatrix, vol, gridSize, voxelSize);
     }
 
     SimpleMesh mesh;
     std::cout << "Volume: " << vol.getDimX() << " " << vol.getDimY() << " " << vol.getDimZ() << " " << vol.getData() << std::endl;
+    double minValue, maxValue;
+    vol.computeMinMaxValues(minValue, maxValue);
+    for (int i = 0; i < gridSize; i++) {
+        for (int j = 0; j < gridSize; j++) {
+            for (int k = 0; k < gridSize; k++) {
+                if (vol.get(i, j, k) != 0.0) { 
+                    std::cout << vol.get(i, j, k) << " ";
+                }
+            }
+        }
+    }
+    std::cout << "Volume Min: " << minValue << ", Max: " << maxValue << std::endl;
+
     marchingCubes(vol, 0.0f, mesh);
 
     std::cout << "Number of vertices: " << mesh.GetVertices().size() << std::endl;
