@@ -34,7 +34,7 @@ void loadCalibrationResults( std::string& filename, cv::Mat& cameraMatrix, cv::M
 }
 
 void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& image, const cv::Mat& cameraMatrix, 
-                  Volume& vol, int gridSize, float voxelSize) {
+                  Volume& vol, int gridSize, float voxelSize, int imageIndex) {
     if (rvecs.empty() || tvecs.empty()) {
         std::cerr << "Error: Empty rvecs or tvecs passed to updateVolume!" << std::endl;
         return;
@@ -44,6 +44,15 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     cv::Mat grayImage, mask;
     cv::cvtColor(image, grayImage, cv::COLOR_BGR2GRAY);
     cv::threshold(grayImage, mask, 1, 255, cv::THRESH_BINARY);
+
+    // // Save grayscale and mask images
+    // std::string grayFilename = "grayscale_" + std::to_string(imageIndex) + ".png";
+    // std::string maskFilename = "masked_" + std::to_string(imageIndex) + ".png";
+    // cv::imwrite(grayFilename, grayImage);
+    // cv::imwrite(maskFilename, mask);
+
+    // Compute the center of the object in the world coordinates (optional, depending on the object size and position)
+    cv::Mat center = (cv::Mat_<double>(4, 1) << gridSize * voxelSize / 2, gridSize * voxelSize / 2, gridSize * voxelSize / 2, 1);
 
     for (int poseIdx = 0; poseIdx < rvecs.rows; ++poseIdx) {
         // Convert rvecs and tvecs from Vec3d to Mat
@@ -59,12 +68,14 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
         cv::hconcat(R, tvec, Rt);
         cv::Mat P = cameraMatrix * Rt;
 
-        // Update volume
+        // Update volume by translating the voxel centers to the center of the volume
         for (int x = 0; x < gridSize; ++x) {
             for (int y = 0; y < gridSize; ++y) {
                 for (int z = 0; z < gridSize; ++z) {
-                    // Compute world coordinates of the voxel center
-                    cv::Mat voxelCenter = (cv::Mat_<double>(4, 1) << x * voxelSize, y * voxelSize, z * voxelSize, 1);
+                    // Compute world coordinates of the voxel center, adjusting to the grid center
+                    cv::Mat voxelCenter = (cv::Mat_<double>(4, 1) << (x - gridSize / 2) * voxelSize, 
+                                                            (y - gridSize / 2) * voxelSize, 
+                                                            (z - gridSize / 2) * voxelSize, 1);
                     cv::Mat projected = P * voxelCenter; // Project to the image plane
 
                     // Convert to 2D pixel coordinates
@@ -83,9 +94,8 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
                         if (mask.at<uchar>(imgY, imgX) > 0) {
                             vol.set(x, y, z, w);
                         } else {
-                            vol.set(x, y, z, 0.0);
+                            vol.set(x, y, z, -1.0);
                         }
-                        // std::cout << "Voxel: " << x << " " << y << " " << z << " " << vol.get(x, y, z) << std::endl;
                     }
                 }
             }
@@ -93,18 +103,23 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     }
 }
 
-void performVoxelCarving(const std::vector<cv::Mat>& images, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
+
+
+void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
     const int gridSize = 100;
     const float voxelSize = 0.01f;
     Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
 
-    for (const auto& image : images) {
+    for (size_t i = 0; i < arucoImages.size(); ++i) {
+        const cv::Mat& arucoImage = arucoImages[i];
+        const cv::Mat& maskedImage = maskedImages[i];
+
         std::vector<int> markerIds;
         std::vector<std::vector<cv::Point2f>> markerCorners;
-        detectArucoMarkers(image, markerCorners, markerIds);
+        detectArucoMarkers(arucoImage, markerCorners, markerIds);
 
         if (markerIds.empty()) {
-            std::cout << "No markers detected in image." << std::endl;
+            std::cout << "No markers detected in image " << i << "." << std::endl;
             continue;
         }
 
@@ -113,14 +128,14 @@ void performVoxelCarving(const std::vector<cv::Mat>& images, const cv::Mat& came
 
         // Debug marker pose estimates
         if (rvecs.empty() || tvecs.empty()) {
-            std::cerr << "Error: Pose estimation failed. Empty rvecs/tvecs." << std::endl;
+            std::cerr << "Error: Pose estimation failed for image " << i << ". Empty rvecs/tvecs." << std::endl;
             continue;
         }
 
         std::cout << "Rvecs Type: " << rvecs.type() << ", Size: " << rvecs.size() << std::endl;
         std::cout << "Tvecs Type: " << tvecs.type() << ", Size: " << tvecs.size() << std::endl;
 
-        updateVolume(rvecs, tvecs, image, cameraMatrix, vol, gridSize, voxelSize);
+        updateVolume(rvecs, tvecs, maskedImage, cameraMatrix, vol, gridSize, voxelSize, i);
     }
 
     SimpleMesh mesh;
@@ -147,32 +162,47 @@ void performVoxelCarving(const std::vector<cv::Mat>& images, const cv::Mat& came
 }
 
 int main(int argc, char** argv) {
-    if (argc < 4) {
-        std::cerr << "Usage: " << argv[0] << " <image_directory> <calibration_results.yml> <output.off>" << std::endl;
+    if (argc < 5) {
+        std::cerr << "Usage: " << argv[0] << " <image_directory> <masked_image_directory> <calibration_results.yml> <output.off>" << std::endl;
         return -1;
     }
 
     std::string imageDirectory = argv[1];
-    std::string calibrationFile = argv[2];
-    std::string outputFilename = argv[3];
+    std::string maskedImageDirectory = argv[2];
+    std::string calibrationFile = argv[3];
+    std::string outputFilename = argv[4];
 
     cv::Mat cameraMatrix, distCoeffs;
     loadCalibrationResults(calibrationFile, cameraMatrix, distCoeffs);
 
-    std::vector<cv::Mat> images;
+    std::vector<cv::Mat> arucoImages;
     for ( auto& entry : fs::directory_iterator(imageDirectory)) {
-        cv::Mat image = cv::imread(entry.path().string());
-        if (!image.empty()) {
-            images.push_back(image);
+        cv::Mat arucoImage = cv::imread(entry.path().string());
+        if (!arucoImage.empty()) {
+            arucoImages.push_back(arucoImage);
         }
     }
-
-    if (images.empty()) {
-        std::cerr << "No valid images found in directory: " << imageDirectory << std::endl;
+    if (arucoImages.empty()) {
+        std::cerr << "No valid aruco images found in directory: " << imageDirectory << std::endl;
         return -1;
     }
 
-    performVoxelCarving(images, cameraMatrix, distCoeffs, outputFilename);
+    // Masked images
+        std::vector<cv::Mat> maskedImages;
+    for ( auto& entry : fs::directory_iterator(maskedImageDirectory)) {
+        cv::Mat maskedImage = cv::imread(entry.path().string());
+        if (!maskedImage.empty()) {
+            maskedImages.push_back(maskedImage);
+        }
+    }
+    if (maskedImages.empty()) {
+        std::cerr << "No valid masked images found in directory: " << maskedImageDirectory << std::endl;
+        return -1;
+    }
+
+    performVoxelCarving(arucoImages, maskedImages, cameraMatrix, distCoeffs, outputFilename);
 
     return 0;
 }
+
+
