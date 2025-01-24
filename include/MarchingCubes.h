@@ -343,7 +343,17 @@ Vector3d VertexInterp(double isolevel, const Vector3d& p1, const Vector3d& p2, d
 	// x
 	// f(p1) = valp1
 
-	return (isolevel - valp1) / (valp2 - valp1) * (p2 - p1) + p1;
+    if (valp1 == valp2) {
+        // Avoid division by zero; if both values are the same, return p1 (or p2, as they are the same).
+        return p1;  // or return p2;
+    }
+
+    // Calculate the interpolation factor t
+    double t = (isolevel - valp1) / (valp2 - valp1);
+    
+    // Calculate the interpolated point p
+    Vector3d p = p1 + t * (p2 - p1);
+    return p;
 }
 
 /*
