@@ -45,15 +45,6 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     cv::cvtColor(image, grayImage, cv::COLOR_BGR2GRAY);
     cv::threshold(grayImage, mask, 1, 255, cv::THRESH_BINARY);
 
-    // // Save grayscale and mask images
-    // std::string grayFilename = "grayscale_" + std::to_string(imageIndex) + ".png";
-    // std::string maskFilename = "masked_" + std::to_string(imageIndex) + ".png";
-    // cv::imwrite(grayFilename, grayImage);
-    // cv::imwrite(maskFilename, mask);
-
-    // Compute the center of the object in the world coordinates (optional, depending on the object size and position)
-    cv::Mat center = (cv::Mat_<double>(4, 1) << gridSize * voxelSize / 2, gridSize * voxelSize / 2, gridSize * voxelSize / 2, 1);
-
     for (int poseIdx = 0; poseIdx < rvecs.rows; ++poseIdx) {
         // Convert rvecs and tvecs from Vec3d to Mat
         cv::Mat rvec = cv::Mat(rvecs.at<cv::Vec3d>(poseIdx, 0)).reshape(1, 3); // 3x1 column vector
@@ -90,12 +81,19 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
                         int imgX = static_cast<int>(u);
                         int imgY = static_cast<int>(v);
 
+                        std::cout << "vol get:" << vol.get(x,y,z) << std::endl;
+
                         // Check the foreground mask
-                        if (mask.at<uchar>(imgY, imgX) > 0) {
-                            vol.set(x, y, z, w);
-                        } else {
-                            vol.set(x, y, z, -1.0);
-                        }
+                        if (mask.at<uchar>(imgY, imgX) > 0 && imageIndex == 0) {
+                            // Carve out voxels in the first image
+                            vol.set(x, y, z, -w);
+                        } else if (mask.at<uchar>(imgY, imgX) > 0 && vol.get(x, y, z) != 0) {
+                            // Keep carving out voxels if they are not already carved in subsequent images
+                            vol.set(x, y, z, -w);
+                        } else if (mask.at<uchar>(imgY, imgX) == 0 && vol.get(x, y, z) != 0 && imageIndex > 0) {
+                            // Un-carve voxels if they are background (black) in subsequent images
+                            vol.set(x, y, z, 0.01);
+                        }                        
                     }
                 }
             }
@@ -103,10 +101,8 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     }
 }
 
-
-
 void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
-    const int gridSize = 100;
+    const int gridSize = 50;
     const float voxelSize = 0.01f;
     Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
 
@@ -124,7 +120,7 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
         }
 
         cv::Mat rvecs, tvecs;
-        cv::aruco::estimatePoseSingleMarkers(markerCorners, 0.03, cameraMatrix, distCoeffs, rvecs, tvecs);
+        cv::aruco::estimatePoseSingleMarkers(markerCorners, 0.028, cameraMatrix, distCoeffs, rvecs, tvecs);
 
         // Debug marker pose estimates
         if (rvecs.empty() || tvecs.empty()) {
