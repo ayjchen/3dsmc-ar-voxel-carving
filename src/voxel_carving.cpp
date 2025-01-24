@@ -143,15 +143,6 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
     std::cout << "Volume: " << vol.getDimX() << " " << vol.getDimY() << " " << vol.getDimZ() << " " << vol.getData() << std::endl;
     double minValue, maxValue;
     vol.computeMinMaxValues(minValue, maxValue);
-    for (int i = 0; i < gridSize; i++) {
-        for (int j = 0; j < gridSize; j++) {
-            for (int k = 0; k < gridSize; k++) {
-                if (vol.get(i, j, k) != 0.0) { 
-                    std::cout << vol.get(i, j, k) << " ";
-                }
-            }
-        }
-    }
     std::cout << "Volume Min: " << minValue << ", Max: " << maxValue << std::endl;
 
     marchingCubes(vol, 0.0f, mesh);
@@ -178,6 +169,7 @@ int main(int argc, char** argv) {
 
     std::vector<cv::Mat> arucoImages;
     for ( auto& entry : fs::directory_iterator(imageDirectory)) {
+        std::cout << "Reading image: " << entry.path().string() << std::endl;
         cv::Mat arucoImage = cv::imread(entry.path().string());
         if (!arucoImage.empty()) {
             arucoImages.push_back(arucoImage);
