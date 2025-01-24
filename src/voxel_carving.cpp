@@ -81,8 +81,6 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
                         int imgX = static_cast<int>(u);
                         int imgY = static_cast<int>(v);
 
-                        std::cout << "vol get:" << vol.get(x,y,z) << std::endl;
-
                         // Check the foreground mask
                         if (mask.at<uchar>(imgY, imgX) > 0 && imageIndex == 0) {
                             // Carve out voxels in the first image
@@ -90,10 +88,17 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
                         } else if (mask.at<uchar>(imgY, imgX) > 0 && vol.get(x, y, z) != 0) {
                             // Keep carving out voxels if they are not already carved in subsequent images
                             vol.set(x, y, z, -w);
-                        } else if (mask.at<uchar>(imgY, imgX) == 0 && vol.get(x, y, z) != 0 && imageIndex > 0) {
+                        } else if (mask.at<uchar>(imgY, imgX) == 0 && vol.get(x, y, z) != 0 ) {
                             // Un-carve voxels if they are background (black) in subsequent images
                             vol.set(x, y, z, 0.01);
-                        }                        
+                        }            
+
+                        // // See what it looks like if all cylinders were there
+                        // if (mask.at<uchar>(imgY, imgX) > 0) {
+                        //     // Carve out voxels in the first image
+                        //     vol.set(x, y, z, -w);
+                        // }
+
                     }
                 }
             }
@@ -102,7 +107,7 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
 }
 
 void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
-    const int gridSize = 50;
+    const int gridSize = 100;
     const float voxelSize = 0.01f;
     Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
 
