@@ -183,6 +183,7 @@ int main(int argc, char** argv) {
     // Masked images
         std::vector<cv::Mat> maskedImages;
     for ( auto& entry : fs::directory_iterator(maskedImageDirectory)) {
+        std::cout << "Reading masked image: " << entry.path().string() << std::endl;
         cv::Mat maskedImage = cv::imread(entry.path().string());
         if (!maskedImage.empty()) {
             maskedImages.push_back(maskedImage);
