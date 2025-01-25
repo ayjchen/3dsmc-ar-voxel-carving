@@ -106,6 +106,60 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     }
 }
 
+#include <vector>
+
+// Save 3D points and camera positions to a PLY file
+void saveToPLY(const std::string& filename,
+               const std::vector<cv::Point3d>& markerPoints,
+               const std::vector<cv::Point3d>& cameraPositions,
+               const std::vector<cv::Vec3d>& cameraDirections) {
+    std::ofstream plyFile(filename);
+
+    if (!plyFile.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return;
+    }
+
+    // Calculate total number of points
+    size_t numVertices = markerPoints.size() + cameraPositions.size();
+
+    // Write PLY header
+    plyFile << "ply\n";
+    plyFile << "format ascii 1.0\n";
+    plyFile << "element vertex " << numVertices << "\n";
+    plyFile << "property float x\n";
+    plyFile << "property float y\n";
+    plyFile << "property float z\n";
+    plyFile << "property uchar red\n";
+    plyFile << "property uchar green\n";
+    plyFile << "property uchar blue\n";
+    plyFile << "end_header\n";
+
+    // Write marker points
+    for (const auto& point : markerPoints) {
+        plyFile << point.x << " " << point.y << " " << point.z
+                << " 0 255 0\n";  // Green for markers
+    }
+
+    // Write camera positions
+    for (size_t i = 0; i < cameraPositions.size(); ++i) {
+        const auto& position = cameraPositions[i];
+        plyFile << position.x << " " << position.y << " " << position.z
+                << " 255 0 0\n";  // Red for cameras
+    }
+
+    plyFile.close();
+    std::cout << "Saved PLY file: " << filename << std::endl;
+}
+
+// Convert rotation and translation to camera position in world coordinates
+cv::Point3d computeCameraPosition(const cv::Mat& R, const cv::Mat& t) {
+    cv::Mat camPos = -R.t() * t;
+    return cv::Point3d(camPos.at<double>(0), camPos.at<double>(1), camPos.at<double>(2));
+}
+
+
+
 void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
     const int gridSize = 100;
     const float voxelSize = 0.01f;
@@ -137,7 +191,25 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
         std::cout << "Tvecs Type: " << tvecs.type() << ", Size: " << tvecs.size() << std::endl;
 
         updateVolume(rvecs, tvecs, maskedImage, cameraMatrix, vol, gridSize, voxelSize, i);
-    }
+
+        std::vector<cv::Point3d> markerPoints = {
+        {0.0, 0.0, 0.0}, {0.1, 0.0, 0.0}, {0.0, 0.1, 0.0}, {0.1, 0.1, 0.0}
+        };
+
+        std::vector<cv::Point3d> cameraPositions;
+        for (int i = 0; i < rvecs.rows; ++i) {
+            // Convert rvecs and tvecs from Vec3d to Mat
+            cv::Mat rvec = cv::Mat(rvecs.at<cv::Vec3d>(i, 0)).reshape(1, 3); // 3x1 column vector
+            cv::Mat tvec = cv::Mat(tvecs.at<cv::Vec3d>(i, 0)).reshape(1, 3); // 3x1 column vector
+
+            // Compute the rotation matrix
+            cv::Mat R;
+            cv::Rodrigues(rvec, R);
+            cameraPositions.push_back(computeCameraPosition(R, tvec));
+        }
+
+        saveToPLY("visualization_" + std::to_string(i) + ".ply", markerPoints, cameraPositions, {});
+        }
 
     SimpleMesh mesh;
     std::cout << "Volume: " << vol.getDimX() << " " << vol.getDimY() << " " << vol.getDimZ() << " " << vol.getData() << std::endl;
@@ -168,6 +240,14 @@ int main(int argc, char** argv) {
     loadCalibrationResults(calibrationFile, cameraMatrix, distCoeffs);
 
     std::vector<cv::Mat> arucoImages;
+    // std::vector<std::string> arucoImageNames = {"20241215_114439.jpg", "20241215_114413.jpg", "20241215_114416.jpg", "20241215_114452.jpg", "20241215_114447.jpg", "20241215_114445.jpg", "20241215_114442.jpg", "20241215_114430.jpg", "20241215_114426.jpg", "20241215_114432.jpg", "20241215_114423.jpg", "20241215_114421.jpg"};
+    // for (auto& imageName : arucoImageNames) {
+    //     std::cout << "Reading image: " << imageName << std::endl;
+    //     cv::Mat arucoImage = cv::imread(imageDirectory + imageName);
+    //     if (!arucoImage.empty()) {
+    //         arucoImages.push_back(arucoImage);
+    //     }
+    // }
     for ( auto& entry : fs::directory_iterator(imageDirectory)) {
         std::cout << "Reading image: " << entry.path().string() << std::endl;
         cv::Mat arucoImage = cv::imread(entry.path().string());
@@ -181,7 +261,14 @@ int main(int argc, char** argv) {
     }
 
     // Masked images
-        std::vector<cv::Mat> maskedImages;
+    std::vector<cv::Mat> maskedImages;
+    // for (auto & imageName : arucoImageNames) {
+    //     std::cout << "Reading masked image: " << imageName << std::endl;
+    //     cv::Mat maskedImage = cv::imread(maskedImageDirectory + imageName);
+    //     if (!maskedImage.empty()) {
+    //         maskedImages.push_back(maskedImage);
+    //     }
+    // }
     for ( auto& entry : fs::directory_iterator(maskedImageDirectory)) {
         std::cout << "Reading masked image: " << entry.path().string() << std::endl;
         cv::Mat maskedImage = cv::imread(entry.path().string());
