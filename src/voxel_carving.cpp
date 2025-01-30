@@ -91,30 +91,31 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
                 double u = projected.at<double>(0) / w;
                 double v = projected.at<double>(1) / w;
 
+                int imgX = static_cast<int>(u);
+                int imgY = static_cast<int>(v);
+
                 // Check if the voxel projection lies within the image boundaries
                 if (u >= 0 && u < mask.cols && v >= 0 && v < mask.rows) {
-                    int imgX = static_cast<int>(u);
-                    int imgY = static_cast<int>(v);
 
                     // Check the foreground mask
-                    if (mask.at<uchar>(imgY, imgX) > 0) {
+                    if (mask.at<uchar>(imgY, imgX) > 0 && imageIndex == 0) {
                         // Carve out voxels in the first image
                         vol.set(x, y, z, -1.0);
-                    // } else if (mask.at<uchar>(imgY, imgX) > 0 && vol.get(x, y, z) != 0) {
-                    //     // Keep carving out voxels if they are not already carved in subsequent images
-                    //     vol.set(x, y, z, 1.0);
-                    // } else if (mask.at<uchar>(imgY, imgX) == 0 && vol.get(x, y, z) != 0 ) {
-                    //     // Un-carve voxels if they are background (black) in subsequent images
-                    //     vol.set(x, y, z, -1.0);
-                    } else {
+                    } else if (mask.at<uchar>(imgY, imgX) > 0 && vol.get(x, y, z) != 0) {
+                        // Keep carving out voxels if they are not already carved in subsequent images
+                        vol.set(x, y, z, -1.0);
+                    } else if (mask.at<uchar>(imgY, imgX) == 0 && vol.get(x, y, z) != 0 ) {
+                        // Un-carve voxels if they are background (black) in subsequent images
                         vol.set(x, y, z, 1.0);
-                    }       
+                    }        
 
                     // // See what it looks like if all cylinders were there
                     // if (mask.at<uchar>(imgY, imgX) > 0) {
                     //     // Carve out voxels in the first image
                     //     vol.set(x, y, z, -w);
                     // }
+                } else {
+                    vol.set(x, y, z, 0);
                 }
             }
         }
@@ -293,9 +294,25 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
         cv::Mat R;
         cv::Rodrigues(rvecs, R);
         cameraPositions.push_back(computeCameraPosition(R, tvecs));
-        
+
+        // add all markers
+        std::vector<cv::Point3f> allMarkerPoints;
+        for (size_t i = 0; i < markerIds.size(); ++i) {
+            int id = markerIds[i];
+
+            // Define the 3D positions of the 4 corners of the current marker
+            std::vector<cv::Point3f> markerPoints = {
+                cv::Point3f(assignedMarkers.at(id).x - halfSize, assignedMarkers.at(id).y - halfSize, 0.0f),
+                cv::Point3f(assignedMarkers.at(id).x + halfSize, assignedMarkers.at(id).y - halfSize, 0.0f),
+                cv::Point3f(assignedMarkers.at(id).x + halfSize, assignedMarkers.at(id).y + halfSize, 0.0f),
+                cv::Point3f(assignedMarkers.at(id).x - halfSize, assignedMarkers.at(id).y + halfSize, 0.0f)
+            };
+
+            // Append the current marker's 4 corners to the allMarkerPoints vector
+            allMarkerPoints.insert(allMarkerPoints.end(), markerPoints.begin(), markerPoints.end());
+        }
         std::vector<cv::Point3d> markerPoints3d;
-        for (const auto& pt : markerPoints) {
+        for (const auto& pt : allMarkerPoints) {
             markerPoints3d.emplace_back(pt.x, pt.y, pt.z);
         }
         saveToPLY("visualization_" + std::to_string(i) + ".ply", markerPoints3d, cameraPositions, {});
