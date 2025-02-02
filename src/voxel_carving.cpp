@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <vector>
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
 #include <yaml-cpp/yaml.h>
@@ -31,27 +32,6 @@ void loadCalibrationResults( std::string& filename, cv::Mat& cameraMatrix, cv::M
 
     std::cout << "Camera Matrix:\n" << cameraMatrix << std::endl;
     std::cout << "Distortion Coefficients:\n" << distCoeffs << std::endl;
-}
-
-// Function to compute the camera pose from the marker pose
-cv::Mat computeCameraPose(const cv::Vec3d& rvec, const cv::Vec3d& tvec) {
-    // Step 1: Convert rvec to a rotation matrix
-    cv::Mat R_marker;
-    cv::Rodrigues(rvec, R_marker); // 3×3 rotation matrix
-
-    // Step 2: Invert the rotation matrix
-    cv::Mat R_camera = R_marker.t(); // Transpose is the inverse for rotation matrices
-
-    // Step 3: Invert the translation
-    cv::Mat t_marker = cv::Mat(tvec).reshape(1, 3); // Ensure tvec is a 3×1 column vector
-    cv::Mat t_camera = -R_camera * t_marker; // Translation in the camera frame
-
-    // Step 4: Construct the 4×4 camera pose matrix
-    cv::Mat cameraPose = cv::Mat::eye(4, 4, CV_64F); // Initialize as identity matrix
-    R_camera.copyTo(cameraPose(cv::Rect(0, 0, 3, 3))); // Top-left 3×3 is the rotation
-    t_camera.copyTo(cameraPose(cv::Rect(3, 0, 1, 3))); // Top-right 3×1 is the translation
-
-    return cameraPose; // Return the 4×4 camera pose matrix
 }
 
 void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& image, const cv::Mat& cameraMatrix, 
@@ -106,14 +86,8 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
                         vol.set(x, y, z, -1.0);
                     } else if (mask.at<uchar>(imgY, imgX) == 0 && vol.get(x, y, z) != 0 ) {
                         // Un-carve voxels if they are background (black) in subsequent images
-                        vol.set(x, y, z, 1.0);
+                        vol.set(x, y, z, 0.0);
                     }        
-
-                    // // See what it looks like if all cylinders were there
-                    // if (mask.at<uchar>(imgY, imgX) > 0) {
-                    //     // Carve out voxels in the first image
-                    //     vol.set(x, y, z, -1.0);
-                    // }
                 } else {
                     vol.set(x, y, z, 0);
                 }
@@ -122,8 +96,6 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     }
     
 }
-
-#include <vector>
 
 // Save 3D points and camera positions to a PLY file
 void saveToPLY(const std::string& filename,
@@ -214,7 +186,7 @@ void generateAndAssignMarkers(const cv::Mat& image, int rows, int cols, double m
 
 void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const std::unordered_map<int, cv::Point3f>& assignedMarkers, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
     const int gridSize = 100;
-    const float voxelSize = 0.01f;
+    const float voxelSize = 0.005f;
     Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
     // Initialize the volume with zeros
     for (int x = 0; x < gridSize; ++x) {
@@ -241,15 +213,6 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
         // Identify a marker
         int idIndex = 0;
         int id = markerIds[0]; 
-        // int id;
-        // for (int j = 0; j < markerIds.size(); ++j) {
-        //     if (std::find(markerIds.begin(), markerIds.end(), j) != markerIds.end()) {
-        //         // id = markerIds[j];
-        //         // idIndex = j;
-        //         id = j;
-        //         break;
-        //     }
-        // }
 
         float halfSize = 0.015f;
         std::vector<cv::Point3f> markerPoints = {
@@ -284,38 +247,11 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
 
         updateVolume(rvecs, tvecs, maskedImage, cameraMatrix, vol, gridSize, voxelSize, i);
 
-        // std::vector<cv::Point3d> cameraPositions;
-        // for (int i = 0; i < rvecs.rows; ++i) {
-        //     // Convert rvecs and tvecs from Vec3d to Mat
-        //     cv::Mat rvec = cv::Mat(rvecs.at<cv::Vec3d>(i, 0)).reshape(1, 3); // 3x1 column vector
-        //     cv::Mat tvec = cv::Mat(tvecs.at<cv::Vec3d>(i, 0)).reshape(1, 3); // 3x1 column vector
-
-        //     // Compute the rotation matrix
-        //     cv::Mat R;
-        //     cv::Rodrigues(rvec, R);
-        //     cameraPositions.push_back(computeCameraPosition(R, tvec));
-        // }
+        // Visualize the camera positions
         std::vector<cv::Point3d> cameraPositions;
         cv::Mat R;
         cv::Rodrigues(rvecs, R);
         cameraPositions.push_back(computeCameraPosition(R, tvecs));
-
-        // // add all markers
-        // std::vector<cv::Point3f> allMarkerPoints;
-        // for (size_t i = 0; i < markerIds.size(); ++i) {
-        //     int id = markerIds[i];
-
-        //     // Define the 3D positions of the 4 corners of the current marker
-        //     std::vector<cv::Point3f> markerPoints = {
-        //         cv::Point3f(assignedMarkers.at(id).x - halfSize, assignedMarkers.at(id).y - halfSize, 0.0f),
-        //         cv::Point3f(assignedMarkers.at(id).x + halfSize, assignedMarkers.at(id).y - halfSize, 0.0f),
-        //         cv::Point3f(assignedMarkers.at(id).x + halfSize, assignedMarkers.at(id).y + halfSize, 0.0f),
-        //         cv::Point3f(assignedMarkers.at(id).x - halfSize, assignedMarkers.at(id).y + halfSize, 0.0f)
-        //     };
-
-        //     // Append the current marker's 4 corners to the allMarkerPoints vector
-        //     allMarkerPoints.insert(allMarkerPoints.end(), markerPoints.begin(), markerPoints.end());
-        // }
         std::vector<cv::Point3d> markerPoints3d;
         for (const auto& pt : markerPoints) {
             markerPoints3d.emplace_back(pt.x, pt.y, pt.z);
@@ -328,13 +264,6 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
     double minValue, maxValue;
     vol.computeMinMaxValues(minValue, maxValue);
     std::cout << "Volume Min: " << minValue << ", Max: " << maxValue << std::endl;
-    // for (int x = 0; x < gridSize; ++x) {
-    //     for (int y = 0; y < gridSize; ++y) {
-    //         for (int z = 0; z < gridSize; ++z) {
-    //             std::cout << vol.get(x, y, z) << " ";
-    //         }
-    //     }
-    // }
 
     // export and visualize volume points
     std::vector<cv::Point3d> volumePoints;
@@ -374,14 +303,6 @@ int main(int argc, char** argv) {
     loadCalibrationResults(calibrationFile, cameraMatrix, distCoeffs);
 
     std::vector<cv::Mat> arucoImages;
-    // std::vector<std::string> arucoImageNames = {"20241215_114439.jpg", "20241215_114413.jpg", "20241215_114416.jpg", "20241215_114452.jpg", "20241215_114447.jpg", "20241215_114445.jpg", "20241215_114442.jpg", "20241215_114430.jpg", "20241215_114426.jpg", "20241215_114432.jpg", "20241215_114423.jpg", "20241215_114421.jpg"};
-    // for (auto& imageName : arucoImageNames) {
-    //     std::cout << "Reading image: " << imageName << std::endl;
-    //     cv::Mat arucoImage = cv::imread(imageDirectory + imageName);
-    //     if (!arucoImage.empty()) {
-    //         arucoImages.push_back(arucoImage);
-    //     }
-    // }
     for ( auto& entry : fs::directory_iterator(imageDirectory)) {
         std::cout << "Reading image: " << entry.path().string() << std::endl;
         cv::Mat arucoImage = cv::imread(entry.path().string());
@@ -396,13 +317,6 @@ int main(int argc, char** argv) {
 
     // Masked images
     std::vector<cv::Mat> maskedImages;
-    // for (auto & imageName : arucoImageNames) {
-    //     std::cout << "Reading masked image: " << imageName << std::endl;
-    //     cv::Mat maskedImage = cv::imread(maskedImageDirectory + imageName);
-    //     if (!maskedImage.empty()) {
-    //         maskedImages.push_back(maskedImage);
-    //     }
-    // }
     for ( auto& entry : fs::directory_iterator(maskedImageDirectory)) {
         std::cout << "Reading masked image: " << entry.path().string() << std::endl;
         cv::Mat maskedImage = cv::imread(entry.path().string());
