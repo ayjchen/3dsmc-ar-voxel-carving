@@ -54,14 +54,20 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     cv::hconcat(R, tvecs, Rt);
     cv::Mat P = cameraMatrix * Rt;
 
+    // Define the world coordinate that should be the center of the voxel grid
+    cv::Point3d worldCenter(0.075, 0.1125, 0); // This is the fixed world-space point we want at the center
+    double centerOffset = (gridSize * voxelSize) / 2.0; // Compute the volume center offset
+
     // Update volume by translating the voxel centers to the center of the volume
     for (int x = 0; x < gridSize; ++x) {
         for (int y = 0; y < gridSize; ++y) {
             for (int z = 0; z < gridSize; ++z) {
                 // Compute world coordinates of the voxel center, adjusting to the grid center
-                cv::Mat voxelCenter = (cv::Mat_<double>(4, 1) << (x - gridSize / 2) * voxelSize, 
-                                                        (y - gridSize / 2) * voxelSize, 
-                                                        (z - gridSize / 2) * voxelSize, 1);
+                cv::Mat voxelCenter = (cv::Mat_<double>(4, 1) << 
+                    x * voxelSize - centerOffset + worldCenter.x, 
+                    y * voxelSize - centerOffset + worldCenter.y, 
+                    z * voxelSize - centerOffset + worldCenter.z, 
+                    1);
                 cv::Mat projected = P * voxelCenter; // Project to the image plane
 
                 // Convert to 2D pixel coordinates
@@ -94,7 +100,6 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
             }
         }
     }
-    
 }
 
 // Save 3D points and camera positions to a PLY file
@@ -186,7 +191,7 @@ void generateAndAssignMarkers(const cv::Mat& image, int rows, int cols, double m
 
 void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const std::unordered_map<int, cv::Point3f>& assignedMarkers, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
     const int gridSize = 100;
-    const float voxelSize = 0.005f;
+    const float voxelSize = 0.003f;
     Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
     // Initialize the volume with zeros
     for (int x = 0; x < gridSize; ++x) {
