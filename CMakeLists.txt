@@ -22,9 +22,9 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
 # add_executable(CameraCalibration src/camera_calibration.cpp)
-add_executable(VoxelCarving src/voxel_carving.cpp src/detect_markers.cpp src/marching_cubes.cpp src/Volume.cpp)
-# add_executable(MarchingCubes src/marching_cubes.cpp)
+# add_executable(VoxelCarving src/voxel_carving.cpp src/detect_markers.cpp src/marching_cubes.cpp src/Volume.cpp)
+add_executable(Postprocessing src/postprocessing.cpp)
 
 # target_link_libraries(CameraCalibration ${OpenCV_LIBS})
-target_link_libraries(VoxelCarving ${OpenCV_LIBS} yaml-cpp)
-# target_link_libraries(MarchingCubes ${OpenCV_LIBS})
+# target_link_libraries(VoxelCarving ${OpenCV_LIBS} yaml-cpp)
+target_link_libraries(Postprocessing ${OpenCV_LIBS})
