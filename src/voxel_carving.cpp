@@ -4,6 +4,7 @@
 #include <vector>
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
+#include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
 #include "detect_markers.h"
 #include "marching_cubes.h"
@@ -55,7 +56,7 @@ void updateVolume(const cv::Mat& rvecs, const cv::Mat& tvecs, const cv::Mat& ima
     cv::Mat P = cameraMatrix * Rt;
 
     // Define the world coordinate that should be the center of the voxel grid
-    cv::Point3d worldCenter(0.075, 0.1125, 0); // This is the fixed world-space point we want at the center
+    cv::Point3d worldCenter(0.075, 0.15, 0); // This is the fixed world-space point we want at the center
     double centerOffset = (gridSize * voxelSize) / 2.0; // Compute the volume center offset
 
     // Update volume by translating the voxel centers to the center of the volume
@@ -189,9 +190,34 @@ void generateAndAssignMarkers(const cv::Mat& image, int rows, int cols, double m
     }
 }
 
+void smoothVolume(Volume& vol, int gridSize, int kernelSize, double sigma) {
+    int sizes[3] = { gridSize, gridSize, gridSize };
+    cv::Mat volumeData(3, sizes, CV_64F, vol.getData());
+
+    // Loop over each z-slice
+    for (int z = 0; z < gridSize; ++z) {
+        // Create a range for each dimension. For z, select only current slice
+        cv::Range ranges[3] = { cv::Range::all(), cv::Range::all(), cv::Range(z, z + 1) };
+
+        // Extract the z-slice
+        cv::Mat slice3D = volumeData(ranges);
+        cv::Mat slice2D = slice3D.clone().reshape(1, gridSize);
+
+        // Apply Gaussian blur to the 2D slice
+        cv::GaussianBlur(slice2D, slice2D, cv::Size(kernelSize, kernelSize), sigma);
+
+        // Copy the smoothed slice back into the volume
+        for (int i = 0; i < gridSize; ++i) {
+            for (int j = 0; j < gridSize; ++j) {
+                vol.set(i, j, z, slice2D.at<double>(i, j));
+            }
+        }
+    }
+}
+
 void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const std::unordered_map<int, cv::Point3f>& assignedMarkers, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
-    const int gridSize = 100;
-    const float voxelSize = 0.003f;
+    const int gridSize = 200;
+    const float voxelSize = 0.002f;
     Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
     // Initialize the volume with zeros
     for (int x = 0; x < gridSize; ++x) {
@@ -252,16 +278,16 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
 
         updateVolume(rvecs, tvecs, maskedImage, cameraMatrix, vol, gridSize, voxelSize, i);
 
-        // Visualize the camera positions
-        std::vector<cv::Point3d> cameraPositions;
-        cv::Mat R;
-        cv::Rodrigues(rvecs, R);
-        cameraPositions.push_back(computeCameraPosition(R, tvecs));
-        std::vector<cv::Point3d> markerPoints3d;
-        for (const auto& pt : markerPoints) {
-            markerPoints3d.emplace_back(pt.x, pt.y, pt.z);
-        }
-        saveToPLY("visualization_" + std::to_string(i) + ".ply", markerPoints3d, cameraPositions, {});
+        // // Visualize the camera positions
+        // std::vector<cv::Point3d> cameraPositions;
+        // cv::Mat R;
+        // cv::Rodrigues(rvecs, R);
+        // cameraPositions.push_back(computeCameraPosition(R, tvecs));
+        // std::vector<cv::Point3d> markerPoints3d;
+        // for (const auto& pt : markerPoints) {
+        //     markerPoints3d.emplace_back(pt.x, pt.y, pt.z);
+        // }
+        // saveToPLY("visualization_" + std::to_string(i) + ".ply", markerPoints3d, cameraPositions, {});
         }
 
     SimpleMesh mesh;
@@ -284,6 +310,9 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
         }
     }
     saveToPLY("volume_points.ply", volumePoints, {}, {});
+
+    // Perform postprocessing smoothing
+    smoothVolume(vol, gridSize, 5, 1.0);
 
     marchingCubes(vol, 0.0f, mesh);
 
