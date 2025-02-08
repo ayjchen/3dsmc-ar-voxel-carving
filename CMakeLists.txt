@@ -10,21 +10,12 @@ set(Eigen3_DIR ${LIBRARY_DIR}/Eigen/share/eigen3/cmake CACHE PATH "Path to insta
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-# # Define header and source files
-# set(HEADERS
-#     Eigen.h
-#     ImplicitSurface.h
-#     MarchingCubes.h
-#     Volume.h
-# )
-
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(include)
 
+### Toggle between generating the camera calibration file and the voxel carving process
 # add_executable(CameraCalibration src/camera_calibration.cpp)
-# add_executable(VoxelCarving src/voxel_carving.cpp src/detect_markers.cpp src/marching_cubes.cpp src/Volume.cpp)
-add_executable(Postprocessing src/postprocessing.cpp)
+add_executable(VoxelCarving src/voxel_carving.cpp src/detect_markers.cpp src/marching_cubes.cpp src/Volume.cpp)
 
 # target_link_libraries(CameraCalibration ${OpenCV_LIBS})
-# target_link_libraries(VoxelCarving ${OpenCV_LIBS} yaml-cpp)
-target_link_libraries(Postprocessing ${OpenCV_LIBS})
+target_link_libraries(VoxelCarving ${OpenCV_LIBS} yaml-cpp)
