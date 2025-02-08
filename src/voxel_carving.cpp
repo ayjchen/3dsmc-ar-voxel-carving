@@ -213,11 +213,52 @@ void smoothVolume(Volume& vol, int gridSize, int kernelSize, double sigma) {
             }
         }
     }
+
+    // Loop over each y-slice
+    for (int y = 0; y < gridSize; ++y) {
+        // Select the y-slice
+        cv::Range ranges[3] = { cv::Range::all(), cv::Range(y, y + 1), cv::Range::all() };
+
+        // Extract the y-slice
+        cv::Mat slice3D = volumeData(ranges);
+        cv::Mat slice2D = slice3D.clone().reshape(1, gridSize);
+
+        // Apply Gaussian blur
+        cv::GaussianBlur(slice2D, slice2D, cv::Size(kernelSize, kernelSize), sigma);
+
+        // Copy back into the volume
+        for (int i = 0; i < gridSize; ++i) {
+            for (int j = 0; j < gridSize; ++j) {
+                vol.set(i, y, j, slice2D.at<double>(i, j));
+            }
+        }
+    }
+
+    // Loop over each x-slice
+    for (int x = 0; x < gridSize; ++x) {
+        // Select the x-slice
+        cv::Range ranges[3] = { cv::Range(x, x + 1), cv::Range::all(), cv::Range::all() };
+
+        // Extract the x-slice
+        cv::Mat slice3D = volumeData(ranges);
+        cv::Mat slice2D = slice3D.clone().reshape(1, gridSize);
+
+        // Apply Gaussian blur
+        cv::GaussianBlur(slice2D, slice2D, cv::Size(kernelSize, kernelSize), sigma);
+
+        // Copy back into the volume
+        for (int i = 0; i < gridSize; ++i) {
+            for (int j = 0; j < gridSize; ++j) {
+                vol.set(x, i, j, slice2D.at<double>(i, j));
+            }
+        }
+    }
+
 }
 
 void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vector<cv::Mat>& maskedImages, const std::unordered_map<int, cv::Point3f>& assignedMarkers, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputFilename) {
     const int gridSize = 200;
-    const float voxelSize = 0.002f;
+    const float voxelSize = 0.003f;
     Volume vol(Vector3d(-0.1, -0.1, -0.1), Vector3d(1.1, 1.1, 1.1), gridSize, gridSize, gridSize, 1);
     // Initialize the volume with zeros
     for (int x = 0; x < gridSize; ++x) {
@@ -312,7 +353,7 @@ void performVoxelCarving(const std::vector<cv::Mat>& arucoImages, const std::vec
     saveToPLY("volume_points.ply", volumePoints, {}, {});
 
     // Perform postprocessing smoothing
-    smoothVolume(vol, gridSize, 5, 1.0);
+    smoothVolume(vol, gridSize, 3, 1.0);
 
     marchingCubes(vol, 0.0f, mesh);
 
