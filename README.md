@@ -14,6 +14,7 @@ The Github repo can be found here: https://github.com/ayjchen/3dsmc-ar-voxel-car
 ### Part 1: Foreground Segmentation (Preprocessing)
 Using meta's Segment Anything Model 2 (SAM2), masks were created for each raw input image file.
 The Github repo can be found here: https://github.com/facebookresearch/sam2.git
+sampreprocessing.py file was taken from the above repo and added a loop to run through a directory of images.
 
 *Note*: This step does not need to be conducted explicitly again for the demonstration project, as the masks are pre-saved and can be found at the `data_no_aruco/` directory.
 
