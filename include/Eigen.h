@@ -1,3 +1,4 @@
+// This is a file from Exercise 2 that was adapted for the use of this project.
 #pragma once
 
 #ifndef VERBOSE
